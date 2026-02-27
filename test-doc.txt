@@ -1,0 +1,2 @@
+Weston is a local-first RAG application built using Next.js and SQLite. It has a beautiful Dark mode UI with primary accents in Emerald green.
+The creator of Weston believes that local AI is the future.
