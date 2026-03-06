@@ -91,6 +91,37 @@ export function OnboardingFlow() {
       model: p.model,
     }));
 
+    // Resolve empty model for manage-mode providers (they don't pick a model
+    // during onboarding — use the first suggested model as the default)
+    let primaryModel = primary.model;
+    if (!primaryModel) {
+      const config = providerIndex.get(primary.id);
+      if (config && "suggestedModels" in config && config.suggestedModels?.[0]) {
+        primaryModel = config.suggestedModels[0].id;
+      }
+    }
+
+    // For text-mode providers (OpenRouter), save any custom model the user typed
+    // so it appears in the model dropdown and settings
+    for (const vp of verifiedProviders) {
+      const config = providerIndex.get(vp.id);
+      if (config && config.modelMode === "text" && vp.model) {
+        // Check if it's a custom model (not one of the hardcoded ones)
+        const isBuiltIn = config.models?.some((m) => m.id === vp.model);
+        if (!isBuiltIn) {
+          await fetch("/api/models/custom", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              providerId: vp.id,
+              modelId: vp.model,
+              modelName: vp.model,
+            }),
+          });
+        }
+      }
+    }
+
     await fetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -98,7 +129,7 @@ export function OnboardingFlow() {
         setupComplete: true,
         userName,
         userAbout,
-        defaultModel: { provider: primary.id, model: primary.model },
+        defaultModel: { provider: primary.id, model: primaryModel },
         fallbackModels: fallbacks,
       }),
     });
