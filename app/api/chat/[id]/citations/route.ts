@@ -5,10 +5,10 @@ export const runtime = "nodejs";
 
 export async function GET(
   req: Request,
-  { params }: { params: Promise<{ chatId: string }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { chatId } = await params;
+    const { id: chatId } = await params;
     const { searchParams } = new URL(req.url);
     const sourceName = searchParams.get("sourceName");
 

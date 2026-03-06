@@ -16,11 +16,20 @@ export async function GET(
   try {
     const db = getDb();
     const session = db
-      .prepare("SELECT id, title, created_at, updated_at FROM chat_sessions WHERE id = ?")
+      .prepare("SELECT id, title, created_at, updated_at, parent_id, parent_message_id FROM chat_sessions WHERE id = ?")
       .get(id) as any;
 
     if (!session) {
       return NextResponse.json({ ok: false, error: "Session not found" }, { status: 404 });
+    }
+
+    // Resolve parent title if this is a branched session
+    let parentTitle: string | null = null;
+    if (session.parent_id) {
+      const parent = db
+        .prepare("SELECT title FROM chat_sessions WHERE id = ?")
+        .get(session.parent_id) as { title: string } | undefined;
+      parentTitle = parent?.title ?? null;
     }
 
     return NextResponse.json({
@@ -30,6 +39,9 @@ export async function GET(
         title: session.title,
         createdAt: session.created_at,
         updatedAt: session.updated_at,
+        parentId: session.parent_id,
+        parentTitle: parentTitle,
+        parentMessageId: session.parent_message_id
       },
     });
   } catch (err) {

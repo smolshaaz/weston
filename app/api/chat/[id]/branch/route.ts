@@ -38,9 +38,9 @@ export async function POST(
     }
 
     db.prepare(`
-      INSERT INTO chat_sessions (id, title, created_at, updated_at, attached_sources)
-      VALUES (?, ?, ?, ?, '[]')
-    `).run(newChatId, newTitle, now, now);
+      INSERT INTO chat_sessions (id, title, created_at, updated_at, attached_sources, parent_id, parent_message_id)
+      VALUES (?, ?, ?, ?, '[]', ?, ?)
+    `).run(newChatId, newTitle, now, now, originalChatId, targetMessageId); // Temp placeholder
 
     // 2. Clone messages up to targetMessageId
     // First, find the created_at timestamp of the target message
@@ -61,11 +61,16 @@ export async function POST(
       VALUES (?, ?, ?, ?, ?, ?)
     `);
 
+    let finalTargetId = targetMessageId;
+
     // Use a transaction for bulk insert
     db.transaction(() => {
       for (const msg of messagesToClone) {
         // Create new IDs to avoid any DB collisions
         const newMsgId = `msg_${crypto.randomUUID()}`;
+        if (msg.id === targetMessageId) {
+          finalTargetId = newMsgId;
+        }
         insertMsgStmt.run(
           newMsgId,
           newChatId,
@@ -76,6 +81,8 @@ export async function POST(
         );
       }
     })();
+
+    db.prepare(`UPDATE chat_sessions SET parent_message_id = ? WHERE id = ?`).run(finalTargetId, newChatId);
 
     // 3. Clone active sources
     // Only clone active sources so the user isn't forced to re-curate their context

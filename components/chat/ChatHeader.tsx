@@ -17,8 +17,8 @@ export function ChatHeader({ title }: ChatHeaderProps) {
 
       <div className="flex flex-1 justify-center">
         <TabsList className="grid w-48 grid-cols-2 bg-muted/50">
-          <TabsTrigger value="chat">Chat</TabsTrigger>
-          <TabsTrigger value="sources">Sources</TabsTrigger>
+          <TabsTrigger value="chat" className="cursor-pointer">Chat</TabsTrigger>
+          <TabsTrigger value="sources" className="cursor-pointer">Sources</TabsTrigger>
         </TabsList>
       </div>
 

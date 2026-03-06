@@ -12,10 +12,11 @@ type ProviderDef = {
   name: string;
   docsUrl: string;
   keyPlaceholder: string;
-  modelMode: "select" | "text";
+  modelMode: "select" | "text" | "manage";
   modelPlaceholder?: string;
   modelDocsUrl?: string;
-  models: readonly { id: string; name: string }[];
+  models?: readonly { id: string; name: string }[];
+  suggestedModels?: readonly { id: string; name: string }[];
 };
 
 type Props = {
@@ -51,13 +52,17 @@ export function ProviderStep({
     setError("");
 
     try {
+      const verifyModel = provider.modelMode === "manage"
+        ? (provider.suggestedModels?.[0]?.id ?? "")
+        : model;
+
       const res = await fetch("/api/verify-key", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           provider: selectedProvider,
           apiKey,
-          model,
+          model: verifyModel,
         }),
       });
 
@@ -171,7 +176,7 @@ export function ProviderStep({
         <button
           type="button"
           onClick={verifyAndAdd}
-          disabled={!apiKey || !model || verifying}
+          disabled={!apiKey || (provider.modelMode === "text" && !model) || verifying}
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
         >
           {verifying ? "Verifying…" : "Verify & add"}

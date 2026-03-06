@@ -37,3 +37,30 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ ok: true });
 }
+
+/** Remove a provider entirely */
+export async function DELETE(req: Request) {
+  const { id }: { id: ProviderId } = await req.json();
+  if (!id) return NextResponse.json({ ok: false, error: "Missing id" }, { status: 400 });
+
+  const settings = readSettings();
+  settings.providers = settings.providers.filter((p) => p.id !== id);
+  writeSettings(settings);
+
+  return NextResponse.json({ ok: true });
+}
+
+/** Update only the API key for an existing provider */
+export async function PATCH(req: Request) {
+  const { id, apiKey }: { id: ProviderId; apiKey: string } = await req.json();
+  if (!id || !apiKey) return NextResponse.json({ ok: false, error: "Missing id or apiKey" }, { status: 400 });
+
+  const settings = readSettings();
+  const provider = settings.providers.find((p) => p.id === id);
+  if (!provider) return NextResponse.json({ ok: false, error: "Provider not found" }, { status: 404 });
+
+  provider.apiKey = apiKey;
+  writeSettings(settings);
+
+  return NextResponse.json({ ok: true });
+}

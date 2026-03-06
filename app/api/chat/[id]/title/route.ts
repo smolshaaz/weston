@@ -37,6 +37,16 @@ export async function POST(
       return NextResponse.json({ ok: false, error: "No API key found for default provider" }, { status: 400 });
     }
 
+    // Resolve "default" to an actual model ID
+    let actualModelId = modelRef.model;
+    if (actualModelId === "default") {
+      const { PROVIDERS } = await import("@/lib/constants");
+      const providerData = PROVIDERS.find(p => p.id === modelRef.provider);
+      if (providerData && "suggestedModels" in providerData && providerData.suggestedModels?.[0]) {
+        actualModelId = providerData.suggestedModels[0].id;
+      }
+    }
+
     if (modelRef.provider === "openai" || modelRef.provider === "moonshot") {
       let baseURL;
       switch (modelRef.provider) {
@@ -48,29 +58,29 @@ export async function POST(
         apiKey: activeProvider?.apiKey || "",
         ...(baseURL ? { baseURL } : {})
       });
-      model = openai(modelRef.model);
+      model = openai(actualModelId);
     } else if (modelRef.provider === "anthropic") {
       const anthropic = createAnthropic({ apiKey: activeProvider?.apiKey || "" });
-      model = anthropic(modelRef.model);
+      model = anthropic(actualModelId);
     } else if (modelRef.provider === "google") {
       const google = createGoogleGenerativeAI({ apiKey: activeProvider?.apiKey || "" });
-      model = google(modelRef.model);
+      model = google(actualModelId);
     } else if (modelRef.provider === "openrouter") {
       const openai = createOpenAI({
         apiKey: activeProvider?.apiKey || "",
         baseURL: "https://openrouter.ai/api/v1",
       });
-      model = openai(modelRef.model);
+      model = openai(actualModelId);
     } else if (modelRef.provider === "ollama") {
       const openai = createOpenAI({
         apiKey: "ollama",
         baseURL: "http://localhost:11434/v1",
       });
-      model = openai(modelRef.model);
+      model = openai(actualModelId);
     } else {
       // standard fallback
       const openai = createOpenAI({ apiKey: activeProvider?.apiKey || "" });
-      model = openai(modelRef.model);
+      model = openai(actualModelId);
     }
 
     // 2. Generate a very short title

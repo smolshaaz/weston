@@ -145,6 +145,16 @@ function getDb(): Database.Database {
     db.exec(`ALTER TABLE sources ADD COLUMN tokens INTEGER DEFAULT 0`);
   } catch (err) {}
 
+  // Migration: add parent_id to track branched sessions
+  try {
+    db.exec(`ALTER TABLE chat_sessions ADD COLUMN parent_id TEXT`);
+  } catch (err) {}
+
+  // Migration: add parent_message_id to track which message a branch forked from
+  try {
+    db.exec(`ALTER TABLE chat_sessions ADD COLUMN parent_message_id TEXT`);
+  } catch (err) {}
+
   // Add trigger to automatically delete from vec_chunks when chunks are deleted
   db.exec(`
     CREATE TRIGGER IF NOT EXISTS trg_delete_vec_chunks

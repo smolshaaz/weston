@@ -42,16 +42,18 @@ export function insertMessage({
   role,
   content,
   citations = null,
+  createdAt,
 }: {
   id: string;
   chatId: string;
   role: "user" | "assistant" | "system";
   content: string;
   citations?: any;
+  createdAt?: number;
 }) {
   const db = getDb();
   db.prepare(
-    `INSERT INTO messages (id, chat_id, role, content, citations, created_at)
+    `INSERT OR IGNORE INTO messages (id, chat_id, role, content, citations, created_at)
      VALUES (?, ?, ?, ?, ?, ?)`
   ).run(
     id,
@@ -59,7 +61,7 @@ export function insertMessage({
     role,
     content,
     citations ? JSON.stringify(citations) : null,
-    Date.now()
+    createdAt ?? Date.now()
   );
 }
 
@@ -72,3 +74,22 @@ export function updateMessageContent(id: string, content: string) {
     `UPDATE messages SET content = ? WHERE id = ?`
   ).run(content, id);
 }
+
+export function deleteMessage(id: string) {
+  const db = getDb();
+  db.prepare(`DELETE FROM messages WHERE id = ?`).run(id);
+}
+
+/**
+ * Deletes only empty assistant message placeholders (pre-inserted rows that were
+ * never filled because the stream failed or was regenerated).
+ * This is safe — it never touches non-empty/completed messages regardless of
+ * whether the AI SDK still has them in memory.
+ */
+export function purgeEmptyAssistantMessages(chatId: string) {
+  const db = getDb();
+  db.prepare(
+    `DELETE FROM messages WHERE chat_id = ? AND role = 'assistant' AND (content IS NULL OR content = '')`
+  ).run(chatId);
+}
+

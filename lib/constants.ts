@@ -36,6 +36,7 @@ export interface WestonSettings {
 
   defaultModel: ModelRef;
   fallbackModels: ModelRef[];
+  hiddenModels: string[];
 }
 
 export const DEFAULT_SETTINGS: WestonSettings = {
@@ -45,20 +46,26 @@ export const DEFAULT_SETTINGS: WestonSettings = {
   providers: [],
   defaultModel: { provider: "openai", model: "gpt-4o-mini" },
   fallbackModels: [],
+  hiddenModels: [],
 };
 
 export const SOUL_MD = `# Weston — Soul
 
 You are Weston, a grounded knowledge companion.
 
-## Non-negotiables
-- Do not be vague.
-- Do not hallucinate.
-- If you don't know, say "Not in sources" clearly.
-- When evaluating the user, be direct and specific (no fake positivity).
+## Core Principles
+- FAITHFULNESS FIRST: When answering from uploaded documents, prioritize accuracy over fluency. Never invent, speculate, or embellish beyond what the source material states.
+- CITE YOUR CLAIMS: When making a claim from a source, anchor it with [source_name] so the user knows exactly where it came from. If a document has sections, tables, or figures, reference them when possible.
+- NO SPECULATIVE LANGUAGE: Do not use words like "likely", "probably", "could", or "might" unless the source material itself expresses uncertainty. State facts directly.
+- ADMIT GAPS HONESTLY: If something the user asks about is NOT in the retrieved sources, say so explicitly. Never fill gaps with outside knowledge without clearly labeling it.
+- NO HALLUCINATING SOURCES: Never attribute outside knowledge to the provided documents. Keep the distinction between source-grounded and general knowledge clear at all times.
 
 ## Style
-- Clear, concise, slightly sharp, still helpful.
+- Clear, concise, slightly sharp, always helpful.
+- Do not be vague. Be specific and concrete.
+- When evaluating the user, be direct (no fake positivity).
+- Match the user's energy — short questions get short answers, deep questions get deep answers.
+- Use markdown formatting (bold, bullets, headers) to make answers scannable.
 `;
 
 export const GLOBAL_MEMORY_MD = `# Global Memory
@@ -73,10 +80,16 @@ export const PROVIDERS = [
     name: "OpenAI",
     docsUrl: "https://platform.openai.com/api-keys",
     keyPlaceholder: "sk-...",
-    modelMode: "select" as const,
-    models: [
-      { id: "gpt-4o", name: "GPT-4o" },
-      { id: "gpt-4o-mini", name: "GPT-4o mini" },
+    modelMode: "manage" as const,
+    suggestedModels: [
+      { id: "gpt-5.4", name: "GPT-5.4" },
+      { id: "gpt-5-mini", name: "GPT-5 mini" },
+      { id: "gpt-5-nano", name: "GPT-5 nano" },
+      { id: "gpt-4.1", name: "GPT-4.1" },
+      { id: "gpt-4.1-mini", name: "GPT-4.1 mini" },
+      { id: "gpt-4.1-nano", name: "GPT-4.1 nano" },
+      { id: "o4-mini", name: "o4-mini" },
+      { id: "o3", name: "o3" },
       { id: "o3-mini", name: "o3-mini" },
     ],
   },
@@ -85,10 +98,13 @@ export const PROVIDERS = [
     name: "Anthropic",
     docsUrl: "https://console.anthropic.com/settings/keys",
     keyPlaceholder: "sk-ant-...",
-    modelMode: "select" as const,
-    models: [
-      { id: "claude-3-5-sonnet-latest", name: "Claude Sonnet (latest)" },
-      { id: "claude-3-5-haiku-latest", name: "Claude Haiku (latest)" },
+    modelMode: "manage" as const,
+    suggestedModels: [
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+      { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
+      { id: "claude-opus-4-5", name: "Claude Opus 4.5" },
+      { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
+      { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
     ],
   },
   {
@@ -96,10 +112,15 @@ export const PROVIDERS = [
     name: "Google (Gemini API key)",
     docsUrl: "https://aistudio.google.com/app/apikey",
     keyPlaceholder: "AIza...",
-    modelMode: "select" as const,
-    models: [
+    modelMode: "manage" as const,
+    suggestedModels: [
+      { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro" },
+      { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash Lite" },
+      { id: "gemini-3-pro", name: "Gemini 3 Pro" },
+      { id: "gemini-3-flash", name: "Gemini 3 Flash" },
+      { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
       { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash" },
-      { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro" },
     ],
   },
   {
@@ -120,8 +141,10 @@ export const PROVIDERS = [
     name: "Moonshot (Kimi)",
     docsUrl: "https://platform.moonshot.cn/console/api-keys",
     keyPlaceholder: "sk-...",
-    modelMode: "select" as const,
-    models: [
+    modelMode: "manage" as const,
+    suggestedModels: [
+      { id: "kimi-k2.5", name: "Kimi K2.5" },
+      { id: "kimi-k2-thinking", name: "Kimi K2 Thinking" },
       { id: "moonshot-v1-8k", name: "Moonshot v1 8k" },
       { id: "moonshot-v1-32k", name: "Moonshot v1 32k" },
       { id: "moonshot-v1-128k", name: "Moonshot v1 128k" },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { FileText, Trash2, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ type SourceStub = {
   id: string;
   name: string;
   kind: "pdf" | "txt" | "md";
-  status: "pending" | "indexed" | "indexing" | "failed";
+  status: "uploading" | "pending" | "indexed" | "indexing" | "failed";
   progress: number;
   isActive: boolean;
   wordCount: number;
@@ -36,11 +36,47 @@ export function ChatSources({ chatId }: ChatSourcesProps) {
   const [addTextTitle, setAddTextTitle] = useState("");
   const [addTextContent, setAddTextContent] = useState("");
   const [addTextSubmitting, setAddTextSubmitting] = useState(false);
-  
-  // Drag and drop state
+
+  // Tracks how many rapid re-polls to fire after an upload/text-add
+  const [burstPollsLeft, setBurstPollsLeft] = useState(0);
+
+  // Drag and drop state for the Sources Header box
   const [dragActive, setDragActive] = useState(false);
-  
-  // State for Delete Dialog
+  const dragCounter = useRef(0);
+
+  function handleDragEnter(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current += 1;
+    if (e.dataTransfer?.items && e.dataTransfer.items.length > 0) {
+      setDragActive(true);
+    }
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current -= 1;
+    if (dragCounter.current <= 0 || !e.relatedTarget) {
+      setDragActive(false);
+      dragCounter.current = 0;
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  async function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    dragCounter.current = 0;
+
+    if (uploading || !e.dataTransfer.files?.length) return;
+    await Promise.all(Array.from(e.dataTransfer.files).map((f) => uploadFile(f)));
+  }
   const [deleteSourceId, setDeleteSourceId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -50,54 +86,66 @@ export function ChatSources({ chatId }: ChatSourcesProps) {
   const [isFetchingText, setIsFetchingText] = useState(false);
   const [isSavingText, setIsSavingText] = useState(false);
 
-  // Initial fetch on mount or chat change
-  useEffect(() => {
+  const fetchSources = () =>
     fetch(`/api/sources?chatId=${chatId}`)
       .then((r) => r.json())
-      .then((d) => setSources(d.sources || []))
+      .then((d) => {
+        const real: SourceStub[] = d.sources || [];
+        // Keep optimistic "uploading" entries that haven't landed in DB yet
+        setSources((prev) => {
+          const optimistic = prev.filter(
+            (s) => s.status === "uploading" && !real.some((r) => r.name === s.name)
+          );
+          return [...optimistic, ...real];
+        });
+      })
       .catch(() => {});
-  }, [chatId]);
 
-  // Polling effect: runs whenever sources changes and there's a pending/indexing item
+  // Initial fetch on mount or chat change
+  useEffect(() => { fetchSources(); }, [chatId]);
+
+  // Slow poll while indexing
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
     const isReadyToPoll = sources.some(
       (s) => s.status === "pending" || s.status === "indexing"
     );
-
     if (isReadyToPoll) {
-      timeoutId = setTimeout(() => {
-        fetch(`/api/sources?chatId=${chatId}`)
-          .then((r) => r.json())
-          .then((d) => setSources(d.sources || []))
-          .catch(() => {});
-      }, 3000);
+      timeoutId = setTimeout(fetchSources, 3000);
     }
-
     return () => clearTimeout(timeoutId);
   }, [sources, chatId]);
 
-  function handleDrag(e: React.DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
-  }
+  // Burst poll after upload/text-add to catch sources before slow-poll kicks in
+  useEffect(() => {
+    if (burstPollsLeft <= 0) return;
+    const id = setTimeout(() => {
+      fetchSources();
+      setBurstPollsLeft((n) => n - 1);
+    }, 800);
+    return () => clearTimeout(id);
+  }, [burstPollsLeft, chatId]);
 
-  async function handleDrop(e: React.DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-
-    if (uploading || !e.dataTransfer.files || !e.dataTransfer.files[0]) return;
-    await uploadFile(e.dataTransfer.files[0]);
-  }
+  // Global listener from ChatWorkspace uploads
+  useEffect(() => {
+    const onRefresh = () => {
+      fetchSources();
+      setBurstPollsLeft(5);
+    };
+    window.addEventListener("refreshSources", onRefresh);
+    return () => window.removeEventListener("refreshSources", onRefresh);
+  }, []);
 
   async function uploadFile(file: File) {
     setUploading(true);
+
+    // Immediately add an optimistic placeholder so the user sees something right away
+    const tempId = `temp-${Date.now()}-${Math.random()}`;
+    const ext = file.name.split(".").pop()?.toLowerCase() as "pdf" | "txt" | "md";
+    setSources((prev) => [
+      ...prev,
+      { id: tempId, name: file.name, kind: ext ?? "txt", status: "uploading", progress: 0, isActive: true, wordCount: 0, tokens: 0 },
+    ]);
 
     const formData = new FormData();
     formData.append("file", file);
@@ -110,14 +158,11 @@ export function ChatSources({ chatId }: ChatSourcesProps) {
       });
 
       const data = await res.json();
-
       if (!data.ok) throw new Error(data.error);
 
-      // Refresh sources
-      const refresh = await fetch(`/api/sources?chatId=${chatId}`).then((r) =>
-        r.json()
-      );
-      setSources(refresh.sources || []);
+      // Start a burst of 5 rapid re-polls (every 800ms) to catch the new source
+      // even if the immediate DB write hasn't flushed yet.
+      setBurstPollsLeft(5);
     } catch (err) {
       console.error(err instanceof Error ? err.message : "Upload failed", err);
     } finally {
@@ -126,9 +171,12 @@ export function ChatSources({ chatId }: ChatSourcesProps) {
   }
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    await uploadFile(file);
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    // Upload all files concurrently
+    await Promise.all(files.map((f) => uploadFile(f)));
+    // Reset input so the same file can be re-selected if needed
+    e.target.value = "";
   }
 
   function handleAddText() {
@@ -151,12 +199,9 @@ export function ChatSources({ chatId }: ChatSourcesProps) {
       const data = await res.json();
       if (!data.ok) throw new Error(data.error);
 
-      // Refresh sources
-      const refresh = await fetch(`/api/sources?chatId=${chatId}`).then((r) =>
-        r.json()
-      );
-      setSources(refresh.sources || []);
       setAddTextOpen(false);
+      // Burst poll to catch the new source
+      setBurstPollsLeft(5);
     } catch (err) {
       console.error(err instanceof Error ? err.message : "Text ingestion failed", err);
     } finally {
@@ -232,56 +277,70 @@ export function ChatSources({ chatId }: ChatSourcesProps) {
   return (
     <>
       <div 
-        className={`relative mx-auto max-w-3xl space-y-5 rounded-2xl transition-colors ${dragActive ? "p-4 bg-primary/5 outline-dashed outline-2 outline-primary/50" : ""}`}
-        onDragEnter={handleDrag}
-        onDragLeave={handleDrag}
-        onDragOver={handleDrag}
+        className={`relative mx-auto max-w-3xl space-y-5 rounded-2xl p-6 border-2 border-dashed transition-all ${
+          dragActive 
+            ? "border-primary bg-primary/5 scale-[1.02] shadow-md" 
+            : "border-border/60 bg-muted/10 hover:border-primary/30"
+        }`}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
         {dragActive && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center rounded-2xl bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary">
+          <div className="absolute inset-0 z-50 flex items-center justify-center rounded-2xl bg-card/80 backdrop-blur-sm pointer-events-none">
             <div className="flex flex-col items-center gap-2 text-primary">
               <Upload className="h-8 w-8 animate-bounce" />
-              <span className="font-medium text-lg">Drop files to upload</span>
+              <span className="font-semibold text-lg drop-shadow-sm">Drop files here to upload</span>
             </div>
           </div>
         )}
-
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold tracking-tight text-foreground">Chat Sources</h2>
             <p className="text-sm text-muted-foreground">Weston will only answer using these documents.</p>
           </div>
-          
-          <div className="flex gap-2">
-            <label 
-              className={`cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none border border-border bg-background hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2 ${uploading ? 'opacity-50 pointer-events-none' : ''}`}
-            >
-              <Upload className="h-4 w-4" /> Add files
-              <input
-                type="file"
-                accept=".pdf,.txt,.md"
-                className="hidden"
-                onChange={handleFileUpload}
-                disabled={uploading}
-              />
-            </label>
+          <div className="flex flex-col gap-2.5 shrink-0 w-full sm:w-auto mt-2 sm:mt-0">
+            <div className="flex gap-2 w-full sm:w-auto">
+              <label 
+                className={`flex-1 sm:flex-none cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none border border-border bg-background hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2 ${uploading ? 'opacity-50 pointer-events-none' : ''}`}
+              >
+                <Upload className="h-4 w-4" /> Add files
+                <input
+                  type="file"
+                  accept=".pdf,.txt,.md"
+                  multiple
+                  className="hidden"
+                  onChange={handleFileUpload}
+                  disabled={uploading}
+                />
+              </label>
 
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleAddText}
-              disabled={uploading}
-              className="gap-2 text-sm border-border bg-background hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
-            >
-              <FileText className="h-4 w-4" /> Add text
-            </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleAddText}
+                disabled={uploading}
+                className="flex-1 sm:flex-none gap-2 text-sm border-border bg-background hover:bg-accent hover:text-accent-foreground disabled:opacity-50 cursor-pointer"
+              >
+                <FileText className="h-4 w-4" /> Add text
+              </Button>
+            </div>
+            <div className="hidden sm:flex items-center gap-3 opacity-70">
+              <div className="h-[1px] flex-1 bg-border/80"></div>
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest whitespace-nowrap">
+                or drop files here
+              </span>
+              <div className="h-[1px] flex-1 bg-border/80"></div>
+            </div>
           </div>
         </div>
+      </div>
 
+      <div className="mx-auto max-w-3xl space-y-5 px-1 py-4">
         <div className="grid gap-2">
           {sources.length === 0 ? (
-            <div className="text-sm text-muted-foreground py-8 text-center rounded-xl border border-dashed border-border">
+            <div className="text-sm text-muted-foreground py-8 text-center rounded-xl border border-dashed border-border/50 bg-muted/5">
               No sources added to this chat yet.
             </div>
           ) : null}
@@ -310,31 +369,35 @@ export function ChatSources({ chatId }: ChatSourcesProps) {
               <div className="flex items-center justify-end gap-3 sm:gap-4 shrink-0">
                 <div className="relative">
                   <Badge 
-                    variant={s.status === "indexed" ? "default" : "secondary"}
-                    className={`relative overflow-hidden pointer-events-none ${
-                      s.status === "indexed" 
-                        ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/25" 
-                        : s.status === "failed"
-                        ? "bg-destructive/15 text-destructive border border-destructive/25"
-                        : "bg-primary/10 text-primary border border-primary/20"
-                    }`}
-                  >
-                    {(s.status === "indexing" || s.status === "pending") && (
-                      <div 
-                        className="absolute inset-y-0 left-0 bg-primary/20 transition-all duration-500 ease-out" 
-                        style={{ width: `${s.status === 'pending' ? 5 : Math.max(5, s.progress)}%` }} 
-                      />
-                    )}
-                    <span className="relative z-10 font-semibold tracking-wide">
-                      {s.status === "indexed" 
-                        ? "Ready" 
-                        : s.status === "indexing" 
-                        ? `Reading ${s.progress}%` 
-                        : s.status === "pending" 
-                        ? "Preparing..." 
-                        : "Failed"}
-                    </span>
-                  </Badge>
+                      variant={s.status === "indexed" ? "default" : "secondary"}
+                      className={`relative overflow-hidden pointer-events-none ${
+                        s.status === "indexed" 
+                          ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/25" 
+                          : s.status === "failed"
+                          ? "bg-destructive/15 text-destructive border border-destructive/25"
+                          : s.status === "uploading"
+                          ? "bg-blue-500/15 text-blue-400 border border-blue-500/25"
+                          : "bg-primary/10 text-primary border border-primary/20"
+                      }`}
+                    >
+                      {(s.status === "indexing" || s.status === "pending") && (
+                        <div 
+                          className="absolute inset-y-0 left-0 bg-primary/20 transition-all duration-500 ease-out" 
+                          style={{ width: `${s.status === 'pending' ? 5 : Math.max(5, s.progress)}%` }} 
+                        />
+                      )}
+                      <span className="relative z-10 font-semibold tracking-wide">
+                        {s.status === "indexed" 
+                          ? "Ready" 
+                          : s.status === "indexing" 
+                          ? `Reading ${s.progress}%` 
+                          : s.status === "pending" 
+                          ? "Preparing..."
+                          : s.status === "uploading"
+                          ? "Uploading..."
+                          : "Failed"}
+                      </span>
+                    </Badge>
                 </div>
 
                 {s.status === "indexed" && (

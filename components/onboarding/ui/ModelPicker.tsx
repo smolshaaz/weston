@@ -2,10 +2,11 @@
 
 type ProviderDef = {
   name: string;
-  modelMode: "select" | "text";
+  modelMode: "select" | "text" | "manage";
   modelPlaceholder?: string;
   modelDocsUrl?: string;
-  models: readonly { id: string; name: string }[];
+  models?: readonly { id: string; name: string }[];
+  suggestedModels?: readonly { id: string; name: string }[];
 };
 
 type Props = {
@@ -31,7 +32,11 @@ export function ModelPicker({ provider, value, onChange }: Props) {
         )}
       </div>
 
-      {provider.modelMode === "text" ? (
+      {provider.modelMode === "manage" ? (
+        <div className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
+          You&apos;ll add models after connecting via <strong>Manage Models</strong> in Settings.
+        </div>
+      ) : provider.modelMode === "text" ? (
         <div className="grid gap-2">
           <input
             value={value}
@@ -40,9 +45,9 @@ export function ModelPicker({ provider, value, onChange }: Props) {
             className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
           />
 
-          {provider.models.length > 0 && (
+          {(provider.models ?? []).length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {provider.models.map((m) => (
+              {(provider.models ?? []).map((m) => (
                 <button
                   key={m.id}
                   type="button"
@@ -68,7 +73,7 @@ export function ModelPicker({ provider, value, onChange }: Props) {
           <option value="" disabled>
             Pick a model
           </option>
-          {provider.models.map((m) => (
+          {(provider.models ?? []).map((m) => (
             <option key={m.id} value={m.id}>
               {m.name}
             </option>

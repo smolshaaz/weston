@@ -28,7 +28,7 @@ export async function summarizeChat(chatId: string) {
 
     // Use default model for summarization, fallback if needed
     const activeProvider = settings.providers.find((p) => p.id === modelRef.provider);
-    if (!activeProvider?.apiKey && modelRef.provider !== "ollama" && modelRef.provider !== "default") {
+    if (!activeProvider?.apiKey && modelRef.provider !== "ollama") {
       console.warn("Summarization aborted: No API key for default provider.");
       return;
     }
@@ -36,26 +36,34 @@ export async function summarizeChat(chatId: string) {
     let model;
     const apiKey = activeProvider?.apiKey || "";
 
+    let actualModelId = modelRef.model === "default" && settings.defaultModel ? settings.defaultModel.model : modelRef.model;
+    if (actualModelId === "default") {
+      const { PROVIDERS } = await import("@/lib/constants");
+      const providerData = PROVIDERS.find(p => p.id === modelRef.provider);
+      if (providerData && "suggestedModels" in providerData && providerData.suggestedModels?.[0]) {
+        actualModelId = providerData.suggestedModels[0].id;
+      }
+    }
+
     switch (modelRef.provider) {
       case "openai":
-        model = createOpenAI({ apiKey })(modelRef.model);
+        model = createOpenAI({ apiKey })(actualModelId);
         break;
       case "anthropic":
-        model = createAnthropic({ apiKey })(modelRef.model);
+        model = createAnthropic({ apiKey })(actualModelId);
         break;
       case "google":
-        model = createGoogleGenerativeAI({ apiKey })(modelRef.model);
+        model = createGoogleGenerativeAI({ apiKey })(actualModelId);
         break;
       case "openrouter":
         const { createOpenRouter } = await import("@openrouter/ai-sdk-provider");
-        model = createOpenRouter({ apiKey })(modelRef.model);
+        model = createOpenRouter({ apiKey })(actualModelId);
         break;
       case "moonshot":
         model = createOpenAI({
           apiKey,
           baseURL: "https://api.moonshot.cn/v1",
-          compatibility: "compatible",
-        } as any)(modelRef.model);
+        }).chat(actualModelId);
         break;
       default:
         console.warn(`Summarization aborted: Unsupported provider ${modelRef.provider}`);
@@ -67,11 +75,31 @@ export async function summarizeChat(chatId: string) {
       .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
       .join("\n\n");
 
-    const systemPrompt = `
-You are a memory compressor for an AI assistant.
-Your job is to read the attached conversation transcript and produce a highly condensed, bulleted summary of the established facts, context, and user goals.
-Do NOT summarize pleasantries. Focus ONLY on actionable context that the AI should remember if it were to continue this exact conversation tomorrow.
-Write the summary as a direct reference guide (e.g., "User is trying to build X", "We decided to use Y framework").
+    const systemPrompt = `You are a conversation memory compressor for an AI assistant called Weston.
+
+Your job is to read the conversation transcript below and produce a tightly compressed summary of ONLY the actionable context worth remembering if this conversation were to continue tomorrow.
+
+INCLUDE:
+- User's goals for this conversation
+- Decisions that were made
+- Constraints or requirements the user specified
+- Preferences the user expressed about approach or style
+- Unresolved tasks or open questions
+- Established facts that are critical to continuing the work
+- Next steps that were agreed upon
+
+EXCLUDE:
+- Greetings, pleasantries, filler, and small talk
+- Repetition of the same point
+- Generic world knowledge that any AI already knows
+- The AI's own reasoning process
+- Anything that would be obvious from re-reading the chat
+
+OUTPUT FORMAT:
+- Concise bullet points, each starting with a dash (-)
+- Write in third person (e.g., "User is building X", "We decided to use Y")
+- If the conversation contains NO actionable context worth remembering, output exactly: NO_FACTS
+- Maximum 15 bullet points. Prioritize the most important context.
 `;
 
     const { text } = await generateText({
@@ -133,44 +161,69 @@ export async function extractUserFacts(chatId: string) {
     let modelRef = settings.defaultModel;
 
     const activeProvider = settings.providers.find((p) => p.id === modelRef.provider);
-    if (!activeProvider?.apiKey && modelRef.provider !== "ollama" && modelRef.provider !== "default") {
-      return;
+    if (!activeProvider?.apiKey && modelRef.provider !== "ollama") {
+      modelRef = settings.defaultModel;
     }
 
     let model;
     const apiKey = activeProvider?.apiKey || "";
 
+    let actualModelId = modelRef.model === "default" && settings.defaultModel ? settings.defaultModel.model : modelRef.model;
+    if (actualModelId === "default") {
+      const { PROVIDERS } = await import("@/lib/constants");
+      const providerData = PROVIDERS.find(p => p.id === modelRef.provider);
+      if (providerData && "suggestedModels" in providerData && providerData.suggestedModels?.[0]) {
+        actualModelId = providerData.suggestedModels[0].id;
+      }
+    }
+
     switch (modelRef.provider) {
       case "openai":
-        model = createOpenAI({ apiKey })(modelRef.model);
+        model = createOpenAI({ apiKey })(actualModelId);
         break;
       case "anthropic":
-        model = createAnthropic({ apiKey })(modelRef.model);
+        model = createAnthropic({ apiKey })(actualModelId);
         break;
       case "google":
-        model = createGoogleGenerativeAI({ apiKey })(modelRef.model);
+        model = createGoogleGenerativeAI({ apiKey })(actualModelId);
         break;
       case "openrouter":
         const { createOpenRouter } = await import("@openrouter/ai-sdk-provider");
-        model = createOpenRouter({ apiKey })(modelRef.model);
+        model = createOpenRouter({ apiKey })(actualModelId);
         break;
       case "moonshot":
         model = createOpenAI({
           apiKey,
           baseURL: "https://api.moonshot.cn/v1",
-          compatibility: "compatible",
-        } as any)(modelRef.model);
+        }).chat(actualModelId);
         break;
       default:
         return;
     }
 
-    const systemPrompt = `
-You are an identity extraction engine.
-Read the user's messages and extract ONLY explicit facts they state about themselves (e.g., "I am a developer", "My dog's name is Rex", "I prefer short answers").
-Do NOT extract questions, musings, or facts about the world. ONLY extract facts about the user's identity, preferences, or environment.
-If you find a fact, summarize it into a short, concise bullet point (e.g., "- User is a React developer").
-If there are NO explicit facts about the user in these messages, you MUST output the exact string "NO_FACTS" and nothing else.
+    const systemPrompt = `You are an identity extraction engine for an AI assistant called Weston.
+
+Your job is to read the user's messages and extract ONLY explicit, durable facts the user has directly stated about themselves.
+
+EXTRACT:
+- Identity traits (e.g., "I am a software developer", "I'm 25")
+- Stable preferences (e.g., "I prefer short answers", "I like dark mode")
+- Personal details (e.g., "My dog's name is Rex", "I live in Berlin")
+- Environment/setup details (e.g., "I use a MacBook", "I code in TypeScript")
+- Durable goals explicitly stated (e.g., "I'm building a startup", "I want to learn Rust")
+
+DO NOT EXTRACT:
+- Questions the user asked
+- Guesses, speculation, or hypotheticals
+- Facts about the world, technology, or other people
+- Anything the AI assistant said (only extract from USER messages)
+- Implied facts not explicitly stated
+- Temporary or one-off statements (e.g., "I'm tired today")
+
+OUTPUT FORMAT:
+- Each fact as a short bullet point starting with "- User" (e.g., "- User is a React developer")
+- If there are NO explicit identity facts in these messages, output exactly: NO_FACTS
+- Do not output anything else. No explanations, no preamble.
 `;
 
     const { text } = await generateText({

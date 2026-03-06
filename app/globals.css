@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "katex/dist/katex.min.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -140,4 +141,29 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* KaTeX Math Rendering - theme-aware overrides */
+.katex {
+  color: inherit;
+  font-size: 1em;
+}
+
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 1.25rem 0;
+  padding: 1rem 1.25rem;
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  text-align: center;
+}
+
+.katex-display > .katex {
+  font-size: 1.1em;
+}
+
+.dark .katex {
+  color: var(--foreground);
 }
