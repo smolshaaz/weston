@@ -205,13 +205,8 @@ export function ProvidersTab() {
 
   const allEnabledModels: ModelOption[] = useMemo(() => {
     const result: ModelOption[] = [];
-    for (const p of settings?.providers ?? []) {
-      const def = providerIndex.get(p.id);
-      if (!def) continue;
-      for (const m of (def as any).models ?? []) {
-        result.push({ provider: p.id, id: m.id, name: m.name });
-      }
-    }
+    // Only show models the user has explicitly added (custom models),
+    // not hardcoded provider defaults
     for (const m of customModels) {
       result.push(m);
     }

@@ -1,6 +1,6 @@
 {
   "name": "weston-ai",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "A private, local AI companion. Upload documents, chat with any AI model, and build long-term memory — all on your machine.",
   "bin": {
     "weston": "scripts/cli.js"
